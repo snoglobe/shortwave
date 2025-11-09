@@ -1,0 +1,30 @@
+@font-face {
+  font-family: 'DotMatrix';
+  src: url('/DOTMATRI.TTF') format('truetype');
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'DotMatrix', monospace;
+  background: #000;
+  color: #0ff;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+

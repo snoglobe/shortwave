@@ -1,0 +1,157 @@
+ openapi: 3.0.3
+ info:
+   title: Shortwave Player API
+   version: 0.1.0
+   description: Player-facing API for Shortwave P2P internet radio
+ servers:
+   - url: https://radio.example.com
+ paths:
+   /api/v1/stations:
+     get:
+       summary: List known stations
+       operationId: listStations
+       responses:
+         '200':
+           description: OK
+           content:
+             application/json:
+               schema:
+                 type: array
+                 items:
+                   $ref: '#/components/schemas/StationAssignment'
+   /api/v1/stations/{frequency}:
+     get:
+       summary: Get station by frequency
+       operationId: getStation
+       parameters:
+         - in: path
+           name: frequency
+           required: true
+           schema:
+             type: string
+       responses:
+         '200':
+           description: OK
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/StationAssignment'
+         '404':
+           description: Not found
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/ErrorResponse'
+   /api/v1/events:
+     get:
+       summary: Server-Sent Events of registry updates
+       operationId: events
+       responses:
+  /api/v1/now:
+    get:
+      summary: Get current now-playing metadata
+      operationId: getNow
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NowPlaying'
+        '204':
+          description: No content
+  /api/v1/now/events:
+    get:
+      summary: SSE for now-playing updates
+      operationId: nowEvents
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+         '200':
+           description: Event stream
+           content:
+             text/event-stream:
+               schema:
+                 type: string
+   /stream:
+     get:
+       summary: Audio stream for this node's station
+       operationId: stream
+       parameters:
+         - in: query
+           name: content_type
+           required: false
+           schema:
+             type: string
+       responses:
+         '200':
+           description: Audio stream
+           content:
+             audio/mpeg:
+               schema:
+                 type: string
+                 format: binary
+             audio/ogg:
+               schema:
+                 type: string
+                 format: binary
+ components:
+   schemas:
+     StationAssignment:
+       type: object
+       properties:
+         station_id:
+           type: string
+           format: uuid
+        frequency:
+          oneOf:
+            - type: number
+            - type: string
+          description: Decimal frequency, arbitrary precision (JSON may return as string to preserve precision)
+         name:
+           type: string
+         stream_url:
+           type: string
+           format: uri
+         created_at:
+           type: string
+           format: date-time
+         last_seen:
+           type: string
+           format: date-time
+         expires_at:
+           type: string
+           format: date-time
+       required: [station_id, frequency, name, stream_url, created_at, last_seen, expires_at]
+     ErrorResponse:
+       type: object
+       properties:
+         error:
+           type: string
+       required: [error]
+
+    NowPlaying:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+        artist:
+          type: string
+          nullable: true
+        album:
+          type: string
+          nullable: true
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+      required: [updated_at]
+
