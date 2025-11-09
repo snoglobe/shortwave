@@ -1,9 +1,10 @@
- use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser};
  use uuid::Uuid;
 use bigdecimal::BigDecimal;
 use std::str::FromStr;
 use ed25519_dalek::SigningKey;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use serde::Deserialize;
 
  #[derive(Clone, Debug)]
  pub struct LocalStationConfig {
@@ -37,6 +38,9 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
  #[derive(Parser, Debug, Clone)]
  #[command(author, version, about = "Shortwave P2P Internet Radio Node", long_about = None)]
  pub struct Cli {
+	/// Path to YAML config file (if provided, overrides CLI)
+	#[arg(long = "config", env = "SHORTWAVE_CONFIG")]
+	pub config_path: Option<String>,
  	/// Bind address for the HTTP API (e.g. 0.0.0.0:8080)
  	#[arg(long, env = "SHORTWAVE_BIND", default_value = "0.0.0.0:8080")]
  	pub bind: String,
@@ -120,6 +124,10 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
  	}
 
  	pub fn into_config(self) -> anyhow::Result<Config> {
+		// If a config file is provided, prefer loading from it.
+		if let Some(path) = self.config_path.clone() {
+			return load_config_file(&path);
+		}
  		let node_id = match self.node_id {
  			Some(s) => Uuid::from_str(&s)?,
  			None => Uuid::new_v4(),
@@ -168,5 +176,89 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
  		})
  	}
  }
+
+#[derive(Debug, Deserialize, Clone)]
+struct FileStation {
+	pub name: String,
+	pub frequency: BigDecimal,
+	pub station_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct FileP2P {
+	pub listen: Option<Vec<String>>,
+	pub bootstrap: Option<Vec<String>>,
+	pub mdns: Option<bool>,
+	pub key_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct FileConfig {
+	pub bind: Option<String>,
+	pub public_url: String,
+	pub node_id: Option<Uuid>,
+	pub source_token: Option<String>,
+	pub station: Option<FileStation>,
+	pub advertise_ttl_secs: Option<u32>,
+	pub owner_secret_key: Option<String>,
+	pub max_frequencies_per_owner: Option<u32>,
+	pub ipc_socket: Option<String>,
+	pub audio_ipc_socket: Option<String>,
+	pub blocklist_url: Option<String>,
+	pub blocklist_refresh_secs: Option<u32>,
+	pub p2p: Option<FileP2P>,
+}
+
+fn load_config_file(path: &str) -> anyhow::Result<Config> {
+	let text = std::fs::read_to_string(path)?;
+	let cfg: FileConfig = serde_yaml::from_str(&text)?;
+	let node_id = cfg.node_id.unwrap_or_else(Uuid::new_v4);
+	let bind = cfg.bind.unwrap_or_else(|| "0.0.0.0:8080".to_string());
+	let public_url = cfg.public_url;
+	let local_station = match cfg.station {
+		Some(fs) => {
+			let station_id = fs.station_id.unwrap_or_else(Uuid::new_v4);
+			let stream_url = format!("{}/stream", public_url.trim_end_matches('/'));
+			Some(LocalStationConfig {
+				station_id,
+				name: fs.name,
+				frequency: fs.frequency,
+				stream_url,
+			})
+		}
+		None => None,
+	};
+	let owner_signing_key = match cfg.owner_secret_key {
+		Some(sk_b64) => {
+			let bytes = B64.decode(sk_b64)?;
+			let sk = SigningKey::from_bytes(bytes.as_slice().try_into()?);
+			Some(sk)
+		}
+		None => None,
+	};
+	let p2p_listen = cfg.p2p.as_ref().and_then(|p| p.listen.clone()).unwrap_or_default();
+	let p2p_bootstrap = cfg.p2p.as_ref().and_then(|p| p.bootstrap.clone()).unwrap_or_default();
+	let p2p_mdns = cfg.p2p.as_ref().and_then(|p| p.mdns).unwrap_or(true);
+	let p2p_key_path = cfg.p2p.and_then(|p| p.key_path);
+	Ok(Config {
+		node_id,
+		bind,
+		public_url,
+		peers: Vec::new(),
+		source_token: cfg.source_token,
+		local_station,
+		advertise_ttl_secs: cfg.advertise_ttl_secs.unwrap_or(60).max(10),
+		owner_signing_key,
+		max_frequencies_per_owner: cfg.max_frequencies_per_owner.unwrap_or(3).max(1),
+		ipc_socket: cfg.ipc_socket,
+		audio_ipc_socket: cfg.audio_ipc_socket,
+		blocklist_url: cfg.blocklist_url,
+		blocklist_refresh_secs: cfg.blocklist_refresh_secs.unwrap_or(600).max(30),
+		p2p_listen,
+		p2p_bootstrap,
+		p2p_mdns,
+		p2p_key_path,
+	})
+}
 
 
